@@ -52,7 +52,13 @@ impl Benchmark for MemoryUncachedRead {
     fn weight(&self) -> u64 { 2 }
 
     fn run(&self) -> Result<u64> {
-        let size = 512 * 1024 * 1024;
+        // cap buffer to at most half of total RAM, default 512MB
+        let sys = get_system_info();
+        let total_bytes = sys.total_memory() * 1024; // sys.total_memory() returns KB
+        let default: u64 = 512u64 * 1024 * 1024;
+        let half = total_bytes / 2;
+        let size_bytes = std::cmp::min(default, half);
+        let size = size_bytes as usize;
         let data = vec![0u8; size];
         let start = Instant::now();
         let mut _sum = 0u64;
@@ -72,7 +78,13 @@ impl Benchmark for MemoryWrite {
     fn weight(&self) -> u64 { 2 }
 
     fn run(&self) -> Result<u64> {
-        let size = 512 * 1024 * 1024;
+        // cap buffer to at most half of total RAM, default 512MB
+        let sys = get_system_info();
+        let total_bytes = sys.total_memory() * 1024; // KB -> bytes
+        let default: u64 = 512u64 * 1024 * 1024;
+        let half = total_bytes / 2;
+        let size_bytes = std::cmp::min(default, half);
+        let size = size_bytes as usize;
         let mut data = vec![0u8; size];
         let start = Instant::now();
         for i in 0..size {
@@ -129,7 +141,13 @@ impl Benchmark for MemoryThreaded {
 
     fn run(&self) -> Result<u64> {
         let threads = num_cpus::get();
-        let size = 100 * 1024 * 1024;
+        // per-thread local buffer size, but cap overall allocation to half RAM
+        let sys = get_system_info();
+        let total_bytes = sys.total_memory() * 1024;
+        let per_thread_default: u64 = 100u64 * 1024 * 1024;
+        let per_thread_cap = (total_bytes / 2) / threads as u64;
+        let size_bytes = std::cmp::min(per_thread_default, per_thread_cap);
+        let size = size_bytes as usize;
         let start = Instant::now();
         let mut handles = Vec::new();
         for _ in 0..threads {

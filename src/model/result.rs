@@ -27,6 +27,7 @@ pub struct CpuInfo {
 pub struct RamInfo {
     pub total_mb: u64,
     pub modules: Vec<MemoryModule>,
+    pub total_readable: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -43,6 +44,7 @@ pub struct DiskInfo {
     pub model: Option<String>,
     pub mount_point: Option<String>,
     pub total_bytes: Option<u64>,
+    pub size_readable: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]

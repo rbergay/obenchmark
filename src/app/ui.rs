@@ -160,6 +160,20 @@ impl Application for OBenchmarkApp {
     }
 
     fn view(&self) -> Element<'_, Msg> {
+        fn human_bytes(mut bytes: f64) -> String {
+            let units = ["B", "KB", "MB", "GB", "TB"];
+            let mut i = 0;
+            while bytes >= 1024.0 && i < units.len() - 1 {
+                bytes /= 1024.0;
+                i += 1;
+            }
+            if i == 0 {
+                format!("{} {}", bytes as u64, units[i])
+            } else {
+                format!("{:.2} {}", bytes, units[i])
+            }
+        }
+
         let mut ui = column![text("OBenchmark").size(32), horizontal_rule(1),]
             .spacing(12)
             .padding(16);
@@ -197,21 +211,31 @@ impl Application for OBenchmarkApp {
 
                 rows = rows.push(horizontal_rule(1)).push(text("System info"));
                 if let Some(si) = &result.system_info {
-                    rows = rows
-                        .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
-                        .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
-                        .push(text(format!("Logical cores: {}", si.cpu.cores_logical)))
-                        .push(text(format!("RAM Total: {} MB", si.ram.total_mb)));
+                        rows = rows
+                            .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
+                            .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
+                            .push(text(format!("Logical cores: {}", si.cpu.cores_logical)));
 
-                    for d in &si.disks {
-                        rows = rows.push(text(format!("Disk: {} {} {} (mount: {:?})", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, d.mount_point)));
-                    }
+                        // RAM total: si.ram.total_mb is MB
+                        let ram_display = if si.ram.total_mb >= 1024 {
+                            format!("{:.2} GB", si.ram.total_mb as f64 / 1024.0)
+                        } else {
+                            format!("{} MB", si.ram.total_mb)
+                        };
+                        rows = rows.push(text(format!("RAM Total: {}", ram_display)));
+
+                        for d in &si.disks {
+                            let size_display = if let Some(b) = d.total_bytes { human_bytes(b as f64) } else { "unknown".to_string() };
+                            rows = rows.push(text(format!("Disk: {} {} {} (size: {}) mount: {:?}", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, size_display, d.mount_point)));
+                        }
                 } else {
                     let sys = get_system_info();
-                    rows = rows
-                        .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
-                        .push(text(format!("Cores: {}", sys.cpus().len())))
-                        .push(text(format!("RAM: {} MB", sys.total_memory() / 1024)));
+                        let ram_mb = sys.total_memory() / 1024;
+                        let ram_display = if ram_mb >= 1024 { format!("{:.2} GB", ram_mb as f64 / 1024.0) } else { format!("{} MB", ram_mb) };
+                        rows = rows
+                            .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
+                            .push(text(format!("Cores: {}", sys.cpus().len())))
+                            .push(text(format!("RAM: {}", ram_display)));
                 }
 
                 ui = ui
