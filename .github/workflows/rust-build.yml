@@ -69,6 +69,7 @@ jobs:
       - name: Build release
         env:
           RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "false"
         run: cargo build --release
 
       - name: Archive binary
