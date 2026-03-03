@@ -1,6 +1,5 @@
-use egui::{Context, Visuals};
+use iced::Theme;
 
-pub fn apply_ui_theme(ctx: &Context) {
-    let visuals = Visuals::dark();
-    ctx.set_visuals(visuals);
+pub fn app_theme() -> Theme {
+    Theme::Dark
 }

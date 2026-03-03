@@ -38,11 +38,14 @@ impl Benchmark for CpuIntMath {
     fn run(&self) -> Result<u64> {
         let start = Instant::now();
         let mut x: u64 = 1;
+        let mut count: u64 = 0;
         while start.elapsed().as_secs() < 5 {
             x = x.wrapping_mul(123456789).wrapping_add(987654321);
             x = x.wrapping_sub(54321);
+            count += 1;
         }
-        Ok(x)
+        let elapsed = start.elapsed().as_secs_f64();
+        Ok((count as f64 / elapsed) as u64)
     }
 }
 
@@ -54,11 +57,14 @@ impl Benchmark for CpuFloatMath {
     fn run(&self) -> Result<u64> {
         let start = Instant::now();
         let mut x: f64 = 1.0;
+        let mut count: u64 = 0;
         while start.elapsed().as_secs() < 5 {
             x = x * 1.0000001 + 0.0000001;
             x = x.sin().cos();
+            count += 1;
         }
-        Ok(x as u64)
+        let elapsed = start.elapsed().as_secs_f64();
+        Ok((count as f64 / elapsed) as u64)
     }
 }
 
@@ -93,14 +99,17 @@ impl Benchmark for CpuSSE {
     fn weight(&self) -> u64 { 2 }
     fn run(&self) -> Result<u64> {
         let mut a = vec![1f32; 1_000_000];
-        let mut b = vec![2f32; 1_000_000];
+        let b = vec![2f32; 1_000_000];
         let start = Instant::now();
+        let mut count: u64 = 0;
         while start.elapsed().as_secs() < 5 {
             for i in 0..a.len() {
                 a[i] = a[i] + b[i];
             }
+            count += 1;
         }
-        Ok(0)
+        let elapsed = start.elapsed().as_secs_f64();
+        Ok(((a.len() as u64 * count) as f64 / elapsed) as u64)
     }
 }
 
@@ -116,7 +125,9 @@ impl Benchmark for CpuCompression {
         encoder.write_all(&data)?;
         let _ = encoder.finish()?;
         let elapsed = start.elapsed().as_secs_f64();
-        Ok((1.0 / elapsed) as u64)
+        // Retourner MB compressés par seconde
+        let mb_per_sec = (data.len() as f64 / (1024.0 * 1024.0)) / elapsed;
+        Ok(mb_per_sec as u64)
     }
 }
 
@@ -129,11 +140,14 @@ impl Benchmark for CpuEncryption {
         let mut hasher = Sha256::new();
         let data = vec![0u8; 1024 * 1024];
         let start = Instant::now();
+        let mut count: u64 = 0;
         while start.elapsed().as_secs() < 5 {
             hasher.update(&data);
             let _ = hasher.finalize_reset();
+            count += 1;
         }
-        Ok(0)
+        let elapsed = start.elapsed().as_secs_f64();
+        Ok((count as f64 / elapsed) as u64)
     }
 }
 
@@ -146,12 +160,15 @@ impl Benchmark for CpuPhysics {
         let mut pos = vec![0f64; 100000];
         let vel = vec![1f64; 100000];
         let start = Instant::now();
+        let mut count: u64 = 0;
         while start.elapsed().as_secs() < 5 {
             for i in 0..pos.len() {
                 pos[i] += vel[i];
             }
+            count += 1;
         }
-        Ok(0)
+        let elapsed = start.elapsed().as_secs_f64();
+        Ok(((pos.len() as u64 * count) as f64 / elapsed) as u64)
     }
 }
 
@@ -166,7 +183,9 @@ impl Benchmark for CpuSorting {
         let start = Instant::now();
         v.sort();
         let elapsed = start.elapsed().as_secs_f64();
-        Ok((1.0 / elapsed) as u64)
+        // Retourner entre d'éléments triés par seconde
+        let items_per_sec = (1_000_000u64 as f64 / elapsed) as u64;
+        Ok(items_per_sec)
     }
 }
 

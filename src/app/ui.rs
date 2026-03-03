@@ -1,30 +1,22 @@
-use egui::RichText;
-use crossbeam_channel::{unbounded, Receiver};
 use chrono::Local;
+use crossbeam_channel::{unbounded, Receiver};
+use iced::alignment::Horizontal;
+use iced::time;
+use iced::widget::{button, column, row, scrollable, text, horizontal_rule, progress_bar};
+use iced::{Application, Command, Element, Length, Subscription, Theme};
+
+use std::time::Duration;
 
 use crate::{
     engines::runner::{run_benchmarks, RunnerEvent},
     benchmarks::{
         cpu::{
-            CpuMultiCore,
-            CpuIntMath,
-            CpuFloatMath,
-            CpuPrimeCalc,
-            CpuSSE,
-            CpuCompression,
-            CpuEncryption,
-            CpuPhysics,
-            CpuSorting,
-            CpuUCT,
+            CpuMultiCore, CpuIntMath, CpuFloatMath, CpuPrimeCalc, CpuSSE, CpuCompression,
+            CpuEncryption, CpuPhysics, CpuSorting, CpuUCT,
         },
         memory::{
-            MemoryDBOps,
-            MemoryCachedRead,
-            MemoryUncachedRead,
-            MemoryWrite,
-            MemoryAvailable,
-            MemoryLatency,
-            MemoryThreaded,
+            MemoryDBOps, MemoryCachedRead, MemoryUncachedRead, MemoryWrite, MemoryAvailable,
+            MemoryLatency, MemoryThreaded,
         },
         disk::{DiskSequentialRead, DiskSequentialWrite, DiskRandomIOPS32K, DiskRandomIOPS4K},
     },
@@ -37,193 +29,235 @@ pub struct OBenchmarkApp {
     receiver: Option<Receiver<RunnerEvent>>,
 }
 
-impl OBenchmarkApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        crate::app::theme::apply_ui_theme(&cc.egui_ctx);
-
-        Self { state: AppState::Idle, receiver: None }
-    }
+#[derive(Debug, Clone)]
+pub enum Msg {
+    Start,
+    Tick,
+    Export,
+    Restart,
 }
 
-impl eframe::App for OBenchmarkApp {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        let mut should_restart = false;
+impl Application for OBenchmarkApp {
+    type Executor = iced::executor::Default;
+    type Flags = ();
+    type Message = Msg;
+    type Theme = Theme;
 
-        if let Some(rx) = &self.receiver {
-            while let Ok(event) = rx.try_recv() {
-                match event {
-                    RunnerEvent::BenchStarted(name) => {
-                        let (completed, total) = match &self.state {
-                            AppState::Running { completed, total, .. } => (*completed, *total),
-                            _ => (0, 0),
-                        };
-                        self.state = AppState::Running {
-                            current_test: name.clone(),
-                            completed,
-                            total,
-                        };
-                    }
-                    RunnerEvent::BenchFinished(_, _) => {
-                        if let AppState::Running { completed, .. } = &self.state {
-                            let new_completed = completed + 1;
-                            if let AppState::Running { current_test, total, .. } = &self.state {
-                                self.state = AppState::Running {
-                                    current_test: current_test.clone(),
-                                    completed: new_completed,
-                                    total: *total,
-                                };
+    fn new(_f: Self::Flags) -> (Self, Command<Self::Message>) {
+        (
+            Self {
+                state: AppState::Idle,
+                receiver: None,
+            },
+            Command::none(),
+        )
+    }
+
+    fn title(&self) -> String {
+        "OBenchmark".to_string()
+    }
+
+    fn theme(&self) -> Theme {
+        Theme::Dark
+    }
+
+    fn subscription(&self) -> Subscription<Self::Message> {
+        time::every(Duration::from_millis(40)).map(|_| Msg::Tick)
+    }
+
+    fn update(&mut self, msg: Self::Message) -> Command<Self::Message> {
+        match msg {
+            Msg::Start => {
+                let (tx, rx) = unbounded();
+
+                let benches: Vec<Box<dyn crate::engines::benchmark::Benchmark>> = vec![
+                    Box::new(CpuMultiCore),
+                    Box::new(CpuIntMath),
+                    Box::new(CpuFloatMath),
+                    Box::new(CpuPrimeCalc),
+                    Box::new(CpuSSE),
+                    Box::new(CpuCompression),
+                    Box::new(CpuEncryption),
+                    Box::new(CpuPhysics),
+                    Box::new(CpuSorting),
+                    Box::new(CpuUCT),
+                    Box::new(MemoryDBOps),
+                    Box::new(MemoryCachedRead),
+                    Box::new(MemoryUncachedRead),
+                    Box::new(MemoryWrite),
+                    Box::new(MemoryAvailable),
+                    Box::new(MemoryLatency),
+                    Box::new(MemoryThreaded),
+                    Box::new(DiskSequentialRead),
+                    Box::new(DiskSequentialWrite),
+                    Box::new(DiskRandomIOPS32K),
+                    Box::new(DiskRandomIOPS4K),
+                ];
+                let total = benches.len();
+
+                self.state = AppState::Running {
+                    current_test: String::new(),
+                    completed: 0,
+                    total,
+                };
+
+                std::thread::spawn(move || {
+                    run_benchmarks(benches, tx);
+                });
+
+                self.receiver = Some(rx);
+            }
+
+            Msg::Tick => {
+                if let Some(rx) = &self.receiver {
+                    while let Ok(event) = rx.try_recv() {
+                        match event {
+                            RunnerEvent::BenchStarted(name) => {
+                                if let AppState::Running { completed, total, .. } = &self.state {
+                                    self.state = AppState::Running {
+                                        current_test: name,
+                                        completed: *completed,
+                                        total: *total,
+                                    };
+                                }
+                            }
+
+                            RunnerEvent::BenchFinished(_, _) => {
+                                if let AppState::Running { current_test, completed, total } = &self.state {
+                                    self.state = AppState::Running {
+                                        current_test: current_test.clone(),
+                                        completed: completed + 1,
+                                        total: *total,
+                                    };
+                                }
+                            }
+
+                            RunnerEvent::Done(result) => {
+                                self.state = AppState::Showing(result.clone());
+                            }
+
+                            RunnerEvent::Error(e) => {
+                                self.state = AppState::Error(e);
                             }
                         }
                     }
-                    RunnerEvent::Done(result) => {
-                        self.state = AppState::Showing(result.clone());
-                    }
-                    RunnerEvent::Error(e) => {
-                        self.state = AppState::Error(e);
-                    }
                 }
+            }
+
+            Msg::Export => {
+                if let AppState::Showing(result) = &self.state {
+                    let json = serde_json::to_string_pretty(result).unwrap();
+                    let _ = std::fs::write(format!("bench_{}.json", Local::now().timestamp()), json);
+                }
+            }
+
+            Msg::Restart => {
+                self.state = AppState::Idle;
+                self.receiver = None;
+            }
+        }
+        Command::none()
+    }
+
+    fn view(&self) -> Element<'_, Msg> {
+        fn human_bytes(mut bytes: f64) -> String {
+            let units = ["B", "KB", "MB", "GB", "TB"];
+            let mut i = 0;
+            while bytes >= 1024.0 && i < units.len() - 1 {
+                bytes /= 1024.0;
+                i += 1;
+            }
+            if i == 0 {
+                format!("{} {}", bytes as u64, units[i])
+            } else {
+                format!("{:.2} {}", bytes, units[i])
             }
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let avail = ui.available_width();
-            // responsive heading size
-            let heading_size = (avail / 20.0).clamp(20.0, 60.0);
-            ui.heading(RichText::new("OBenchmark").size(heading_size));
-            ui.separator();
+        let mut ui = column![text("OBenchmark").size(32), horizontal_rule(1),]
+            .spacing(12)
+            .padding(16);
 
-            match &self.state {
-                AppState::Idle => {
-                    ui.vertical_centered(|ui| {
-                        if ui.add_sized([avail * 0.5, 40.0], egui::Button::new("Start Benchmark")).clicked() {
-                            let (tx, rx) = unbounded();
+        match &self.state {
+            AppState::Idle => {
+                ui = ui.push(
+                    button("Start Benchmark")
+                        .on_press(Msg::Start)
+                        .width(Length::Fill)
+                );
+            }
 
-                            // build vector of benchmarks so we can know total count
-                            let benches: Vec<Box<dyn crate::engines::benchmark::Benchmark>> = vec![
-                            Box::new(CpuMultiCore),
-                            Box::new(CpuIntMath),
-                            Box::new(CpuFloatMath),
-                            Box::new(CpuPrimeCalc),
-                            Box::new(CpuSSE),
-                            Box::new(CpuCompression),
-                            Box::new(CpuEncryption),
-                            Box::new(CpuPhysics),
-                            Box::new(CpuSorting),
-                            Box::new(CpuUCT),
-                            Box::new(MemoryDBOps),
-                            Box::new(MemoryCachedRead),
-                            Box::new(MemoryUncachedRead),
-                            Box::new(MemoryWrite),
-                            Box::new(MemoryAvailable),
-                            Box::new(MemoryLatency),
-                            Box::new(MemoryThreaded),
-                            Box::new(DiskSequentialRead),
-                            Box::new(DiskSequentialWrite),
-                            Box::new(DiskRandomIOPS32K),
-                            Box::new(DiskRandomIOPS4K),
-                        ];
-                        let total = benches.len();
-                        self.state = AppState::Running { current_test: String::new(), completed: 0, total };
+            AppState::Running { current_test, completed, total } => {
+                let global = if *total > 0 { *completed as f32 / *total as f32 } else { 0.0 };
 
-                        run_benchmarks(benches, tx);
-                        self.receiver = Some(rx);
+                ui = ui
+                    .push(text(format!("Test en cours : {}", current_test)).size(20))
+                    .push(progress_bar(0.0..=1.0, global));
+            }
+
+            AppState::Showing(result) => {
+                let mut rows = column![text(format!("Score final : {}", result.final_score)).size(24)];
+
+                for s in &result.scores {
+                    rows = rows.push(
+                        row![
+                            text(&s.name).width(Length::FillPortion(2)),
+                            text(format!("{}", s.raw_score))
+                                .width(Length::FillPortion(1))
+                                .horizontal_alignment(Horizontal::Right),
+                        ]
+                    );
+                }
+
+                rows = rows.push(horizontal_rule(1)).push(text("System info"));
+                if let Some(si) = &result.system_info {
+                        rows = rows
+                            .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
+                            .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
+                            .push(text(format!("Logical cores: {}", si.cpu.cores_logical)));
+
+                        // RAM total: si.ram.total_mb is MB
+                        let ram_display = if si.ram.total_mb >= 1024 {
+                            format!("{:.2} GB", si.ram.total_mb as f64 / 1024.0)
+                        } else {
+                            format!("{} MB", si.ram.total_mb)
+                        };
+                        rows = rows.push(text(format!("RAM Total: {}", ram_display)));
+
+                        for d in &si.disks {
+                            let size_display = if let Some(b) = d.total_bytes { human_bytes(b as f64) } else { "unknown".to_string() };
+                            rows = rows.push(text(format!("Disk: {} {} {} (size: {}) mount: {:?}", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, size_display, d.mount_point)));
                         }
-                    });
+                } else {
+                    let sys = get_system_info();
+                        let ram_mb = sys.total_memory() / 1024;
+                        let ram_display = if ram_mb >= 1024 { format!("{:.2} GB", ram_mb as f64 / 1024.0) } else { format!("{} MB", ram_mb) };
+                        rows = rows
+                            .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
+                            .push(text(format!("Cores: {}", sys.cpus().len())))
+                            .push(text(format!("RAM: {}", ram_display)));
                 }
 
-                AppState::Running { current_test, completed, total } => {
-                    ui.label(RichText::new(format!("Test en cours: {}", current_test)).size(18.0).strong());
-                    ui.separator();
-                    
-                    // Barre de progression du test actuel
-                    ui.label("Progression du test:");
-                    ui.add(egui::ProgressBar::new(0.5).desired_width(avail).show_percentage());
-                    
-                    ui.separator();
-                    
-                    // Barre de progression globale
-                    let global_progress = *completed as f32 / *total as f32;
-                    ui.label(format!("Tests: {}/{}", completed, total));
-                    ui.add(egui::ProgressBar::new(global_progress).desired_width(avail).show_percentage());
-                }
-
-                AppState::Showing(result) => {
-                    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                        // responsive final score text
-                        let score_size = (avail / 15.0).clamp(20.0, 48.0);
-                        ui.label(RichText::new(format!("Score final: {}", result.final_score)).size(score_size).strong());
-                        ui.separator();
-
-                        ui.label(RichText::new("Détail des scores:").size(18.0).strong());
-                        // use columns for score detail to adapt width
-                        ui.columns(2, |cols| {
-                            for score in &result.scores {
-                                cols[0].label(&score.name);
-                                cols[1].label(RichText::new(format!("{}", score.raw_score)).strong());
-                            }
-                        });
-
-                        ui.separator();
-                        ui.label("System Info");
-
-                        let sys = get_system_info();
-
-                        ui.label(format!("CPU: {}", sys.global_cpu_info().brand()));
-                        ui.label(format!("Cores: {}", sys.cpus().len()));
-                        ui.label(format!("RAM: {} MB", sys.total_memory() / 1024));
-                        ui.label(format!("OS: {:?}", sysinfo::System::name()));
-
-                        ui.horizontal(|ui| {
-                            if ui.button("Export Result JSON").clicked() {
-                                let json = serde_json::to_string_pretty(&result).unwrap();
-                                std::fs::write(format!("bench_{}.json", Local::now().timestamp()), json).ok();
-                            }
-
-                            if ui.button("🔄 New Analysis").clicked() {
-                                should_restart = true;
-                            }
-                        });
-                    });
-                }
-
-                AppState::Error(err) => {
-                    ui.colored_label(egui::Color32::RED, err);
-                }
+                // combine rows and buttons in one column and make it scrollable
+                ui = ui.push(
+                    scrollable(
+                        column![
+                            rows,
+                            row![
+                                button("Export JSON").on_press(Msg::Export),
+                                button("Nouvelle analyse").on_press(Msg::Restart)
+                            ]
+                            .spacing(10),
+                        ]
+                    )
+                );
             }
-        });
 
-        if should_restart {
-            let (tx, rx) = unbounded();
-            let benches: Vec<Box<dyn crate::engines::benchmark::Benchmark>> = vec![
-                Box::new(CpuMultiCore),
-                Box::new(CpuIntMath),
-                Box::new(CpuFloatMath),
-                Box::new(CpuPrimeCalc),
-                Box::new(CpuSSE),
-                Box::new(CpuCompression),
-                Box::new(CpuEncryption),
-                Box::new(CpuPhysics),
-                Box::new(CpuSorting),
-                Box::new(CpuUCT),
-                Box::new(MemoryDBOps),
-                Box::new(MemoryCachedRead),
-                Box::new(MemoryUncachedRead),
-                Box::new(MemoryWrite),
-                Box::new(MemoryAvailable),
-                Box::new(MemoryLatency),
-                Box::new(MemoryThreaded),
-                Box::new(DiskSequentialRead),
-                Box::new(DiskSequentialWrite),
-                Box::new(DiskRandomIOPS32K),
-                Box::new(DiskRandomIOPS4K),
-            ];
-            let total = benches.len();
-            self.state = AppState::Running { current_test: String::new(), completed: 0, total };
-
-            run_benchmarks(benches, tx);
-            self.receiver = Some(rx);
+            AppState::Error(err) => {
+                ui = ui.push(text(format!("Erreur : {}", err)));
+            }
         }
 
-        ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        ui.into()
     }
 }

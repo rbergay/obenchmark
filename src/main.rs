@@ -4,9 +4,16 @@ mod benchmarks;
 mod model;
 mod util;
 
-use app::ui::OBenchmarkApp;
+use iced::{Application, Settings};
 
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions::default();
-    eframe::run_native("OBenchmark", options, Box::new(|cc| Box::new(OBenchmarkApp::new(cc))))
+fn main() -> iced::Result {
+    let settings = Settings {
+        window: iced::window::Settings {
+            size: iced::Size::new(960.0, 720.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    app::ui::OBenchmarkApp::run(settings)
 }
