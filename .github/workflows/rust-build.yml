@@ -1,9 +1,9 @@
 # ------------------------------------------------------------
-# GitHub Actions – OBenchmark V2 Professional
-# Build multi-platform (Linux / macOS / Windows)
+# GitHub Actions – OBenchmark Cross Platform Build
+# Linux / macOS / Windows
 # ------------------------------------------------------------
 
-name: OBenchmark Pro – Cross Platform Build
+name: OBenchmark – Cross Platform Build
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ env:
 jobs:
 
   # ==========================================================
-  # 🐧 Linux
+  # 🐧 Linux (Ubuntu)
   # ==========================================================
   build-linux:
     name: Build (Linux)
@@ -26,7 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install Rust toolchain (stable)
+      # Linux deps for wgpu + X11 + Wayland
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libx11-dev libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev \
+            libwayland-dev libxkbcommon-dev \
+            libudev-dev \
+            libvulkan-dev
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -38,17 +48,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: linux-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            linux-cargo-
+          restore-keys: linux-cargo-
 
-      # Cache target directory
-      - name: Cache target
+      # Cache target build folder
+      - name: Cache target directory
         uses: actions/cache@v4
         with:
           path: target
           key: linux-target-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            linux-target-
+          restore-keys: linux-target-
 
       - name: Build release
         run: cargo build --release
@@ -67,7 +75,7 @@ jobs:
 
 
   # ==========================================================
-  # 🍎 macOS
+  # 🍎 macOS (Intel + ARM)
   # ==========================================================
   build-macos:
     name: Build (macOS)
@@ -86,16 +94,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: macos-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            macos-cargo-
+          restore-keys: macos-cargo-
 
       - name: Cache target
         uses: actions/cache@v4
         with:
           path: target
           key: macos-target-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            macos-target-
+          restore-keys: macos-target-
 
       - name: Build release
         run: cargo build --release
@@ -133,16 +139,14 @@ jobs:
             ~\.cargo\registry
             ~\.cargo\git
           key: windows-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-cargo-
+          restore-keys: windows-cargo-
 
       - name: Cache target
         uses: actions/cache@v4
         with:
           path: target
           key: windows-target-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            windows-target-
+          restore-keys: windows-target-
 
       - name: Build release
         run: cargo build --release

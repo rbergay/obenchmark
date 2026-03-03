@@ -82,7 +82,7 @@ impl Benchmark for DiskRandomIOPS32K {
         let file_size = 1024 * 1024 * 1024; // 1 GB
 
         // Créer le fichier de test
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .open("benchmark_iops_32k.dat")?;
@@ -126,7 +126,7 @@ impl Benchmark for DiskRandomIOPS4K {
         let file_size = 1024 * 1024 * 1024; // 1 GB
 
         // Créer le fichier de test
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .write(true)
             .create(true)
             .open("benchmark_iops_4k.dat")?;

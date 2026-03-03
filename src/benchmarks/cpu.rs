@@ -93,7 +93,7 @@ impl Benchmark for CpuSSE {
     fn weight(&self) -> u64 { 2 }
     fn run(&self) -> Result<u64> {
         let mut a = vec![1f32; 1_000_000];
-        let mut b = vec![2f32; 1_000_000];
+        let b = vec![2f32; 1_000_000];
         let start = Instant::now();
         while start.elapsed().as_secs() < 5 {
             for i in 0..a.len() {
