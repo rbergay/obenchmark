@@ -6,7 +6,7 @@ license = "MIT"
 description = "Open-source benchmark tool"
 
 [dependencies]
-eframe = { version = "0.27", default-features = false, features = ["wgpu", "x11", "wayland"] 
+eframe = { version = "0.27", default-features = false, features = ["wgpu", "x11", "wayland"] }
 egui = "0.27"
 egui_plot = "0.27"
 rayon = "1.8"
