@@ -238,15 +238,17 @@ impl Application for OBenchmarkApp {
                             .push(text(format!("RAM: {}", ram_display)));
                 }
 
-                ui = ui
-                    .push(scrollable(rows))
-                    .push(
-                        row![
-                            button("Export JSON").on_press(Msg::Export),
-                            button("Nouvelle analyse").on_press(Msg::Restart)
-                        ]
-                        .spacing(10),
-                    );
+                // put rows and action buttons together in a column that can scroll
+                let content = column![
+                    scrollable(rows),
+                    row![
+                        button("Export JSON").on_press(Msg::Export),
+                        button("Nouvelle analyse").on_press(Msg::Restart)
+                    ]
+                    .spacing(10)
+                ];
+
+                ui = ui.push(scrollable(content));
             }
 
             AppState::Error(err) => {
