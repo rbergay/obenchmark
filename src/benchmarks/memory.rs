@@ -114,9 +114,10 @@ impl Benchmark for MemoryLatency {
         for _ in 0..n {
             idx = data[idx];
         }
-        let elapsed = start.elapsed().as_nanos() as f64;
-        let ns_per_access = elapsed / (n as f64);
-        Ok(ns_per_access as u64)
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        // Convertir en accès par seconde (plus élevé = mieux)
+        let accesses_per_sec = (n as f64) / elapsed_secs;
+        Ok(accesses_per_sec as u64)
     }
 }
 

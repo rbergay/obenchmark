@@ -195,13 +195,24 @@ impl Application for OBenchmarkApp {
                     );
                 }
 
-                let sys = get_system_info();
-                rows = rows
-                    .push(horizontal_rule(1))
-                    .push(text("System info"))
-                    .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
-                    .push(text(format!("Cores: {}", sys.cpus().len())))
-                    .push(text(format!("RAM: {} MB", sys.total_memory() / 1024)));
+                rows = rows.push(horizontal_rule(1)).push(text("System info"));
+                if let Some(si) = &result.system_info {
+                    rows = rows
+                        .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
+                        .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
+                        .push(text(format!("Logical cores: {}", si.cpu.cores_logical)))
+                        .push(text(format!("RAM Total: {} MB", si.ram.total_mb)));
+
+                    for d in &si.disks {
+                        rows = rows.push(text(format!("Disk: {} {} {} (mount: {:?})", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, d.mount_point)));
+                    }
+                } else {
+                    let sys = get_system_info();
+                    rows = rows
+                        .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
+                        .push(text(format!("Cores: {}", sys.cpus().len())))
+                        .push(text(format!("RAM: {} MB", sys.total_memory() / 1024)));
+                }
 
                 ui = ui
                     .push(scrollable(rows))

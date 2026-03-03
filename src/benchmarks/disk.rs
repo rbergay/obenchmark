@@ -1,17 +1,9 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Write, Read, Seek, SeekFrom};
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 use anyhow::Result;
 use crate::engines::benchmark::Benchmark;
-
-// Helper pour générer un pseudo-aléatoire simple
-fn simple_random(seed: u64) -> u64 {
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    ((time.wrapping_mul(1103515245)).wrapping_add(12345)) ^ seed
-}
+use rand::{rngs::StdRng, SeedableRng, Rng};
 
 // Test 1: Lecture séquentielle
 pub struct DiskSequentialRead;
@@ -89,18 +81,18 @@ impl Benchmark for DiskRandomIOPS32K {
         file.set_len(file_size as u64)?;
         drop(file);
 
-        // Simuler les IOPS avec queue depth
+        // Simuler les IOPS avec queue depth (offsets déterministes)
+        let mut rng = StdRng::seed_from_u64(123456789);
         let start = Instant::now();
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open("benchmark_iops_32k.dat")?;
+        let mut buffer = vec![0u8; block_size];
 
-        for i in 0..total_ops {
-            let offset = (simple_random(i as u64) % (file_size as u64 - block_size as u64)) as u64;
+        for _ in 0..total_ops {
+            let offset = rng.gen_range(0..(file_size - block_size)) as u64;
             file.seek(SeekFrom::Start(offset))?;
-            
-            let mut buffer = vec![0u8; block_size];
             let _ = file.read(&mut buffer);
         }
         file.sync_all()?;
@@ -133,18 +125,18 @@ impl Benchmark for DiskRandomIOPS4K {
         file.set_len(file_size as u64)?;
         drop(file);
 
-        // Simuler les IOPS QD1 (une opération à la fois)
+        // Simuler les IOPS QD1 (une opération à la fois) avec offsets déterministes
+        let mut rng = StdRng::seed_from_u64(987654321);
         let start = Instant::now();
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open("benchmark_iops_4k.dat")?;
+        let mut buffer = vec![0u8; block_size];
 
-        for i in 0..total_ops {
-            let offset = (simple_random(i as u64) % (file_size as u64 - block_size as u64)) as u64;
+        for _ in 0..total_ops {
+            let offset = rng.gen_range(0..(file_size - block_size)) as u64;
             file.seek(SeekFrom::Start(offset))?;
-            
-            let mut buffer = vec![0u8; block_size];
             let _ = file.read(&mut buffer);
         }
         file.sync_all()?;

@@ -9,7 +9,7 @@ use iced::{Application, Settings};
 fn main() -> iced::Result {
     let settings = Settings {
         window: iced::window::Settings {
-            size: iced::Size::new(960.0, 600.0),
+            size: iced::Size::new(960.0, 720.0),
             ..Default::default()
         },
         ..Default::default()
