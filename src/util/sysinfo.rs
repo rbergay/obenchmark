@@ -160,6 +160,7 @@ pub fn get_detailed_system_info() -> SystemInfo {
     {
         #[derive(Deserialize, Debug)]
         struct Win32DiskDrive {
+            DeviceID: Option<String>,
             Model: Option<String>,
             Manufacturer: Option<String>,
             InterfaceType: Option<String>,
@@ -226,7 +227,10 @@ pub fn get_detailed_system_info() -> SystemInfo {
                             *type_hist.entry(t.clone()).or_insert(0) += 1;
                         }
                         sysinfo.ram.modules.push(crate::model::result::MemoryModule {
-                            vendor: m.Manufacturer.clone().filter(|s| !s.trim().is_empty()),
+                            vendor: m.Manufacturer
+                                .clone()
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty()),
                             part_number: m.PartNumber.clone().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
                             size_mb,
                             memory_type: mt,
@@ -240,24 +244,124 @@ pub fn get_detailed_system_info() -> SystemInfo {
                     }
                 }
 
-                // Disk drives (best-effort; mapping to volumes is non-trivial => on enrichit globalement)
-                if let Ok(drives) = wmi_con.raw_query::<Win32DiskDrive>("SELECT Model, Manufacturer, InterfaceType, MediaType FROM Win32_DiskDrive") {
-                    // Apply first non-empty details to unknown disk entries (simple heuristic)
-                    let mut i = 0usize;
+                // Disk drives: associer PHYSICALDRIVE -> partitions -> lettres (C:, D:, ...)
+                #[derive(Deserialize, Debug)]
+                struct Win32DiskDriveToDiskPartition {
+                    Antecedent: String, // DiskDrive
+                    Dependent: String,  // DiskPartition
+                }
+
+                #[derive(Deserialize, Debug)]
+                struct Win32LogicalDiskToPartition {
+                    Antecedent: String, // LogicalDisk
+                    Dependent: String,  // DiskPartition
+                }
+
+                fn extract_quoted_value(s: &str, key: &str) -> Option<String> {
+                    // Extract value from ... key="VALUE" ...
+                    let needle = format!(r#"{key}=""#);
+                    let start = s.find(&needle)? + needle.len();
+                    let rest = &s[start..];
+                    let end = rest.find('"')?;
+                    Some(rest[..end].to_string())
+                }
+
+                fn extract_device_id(ref_str: &str) -> Option<String> {
+                    extract_quoted_value(ref_str, "DeviceID")
+                }
+
+                // Build partition -> drive letter (e.g. "Disk #0, Partition #1" -> "C:")
+                let mut partition_to_letter: HashMap<String, String> = HashMap::new();
+                if let Ok(links) = wmi_con.raw_query::<Win32LogicalDiskToPartition>(
+                    "SELECT Antecedent, Dependent FROM Win32_LogicalDiskToPartition",
+                ) {
+                    for l in links {
+                        if let (Some(letter), Some(partition)) =
+                            (extract_device_id(&l.Antecedent), extract_device_id(&l.Dependent))
+                        {
+                            // letter is typically "C:"
+                            partition_to_letter.insert(partition, letter);
+                        }
+                    }
+                }
+
+                // Build physical drive -> list of partitions
+                let mut physical_to_partitions: HashMap<String, Vec<String>> = HashMap::new();
+                if let Ok(links) = wmi_con.raw_query::<Win32DiskDriveToDiskPartition>(
+                    "SELECT Antecedent, Dependent FROM Win32_DiskDriveToDiskPartition",
+                ) {
+                    for l in links {
+                        if let (Some(physical), Some(partition)) =
+                            (extract_device_id(&l.Antecedent), extract_device_id(&l.Dependent))
+                        {
+                            physical_to_partitions
+                                .entry(physical)
+                                .or_default()
+                                .push(partition);
+                        }
+                    }
+                }
+
+                // sysinfo::Disks mount_point is like "C:\\"; normalize to "C:" for matching
+                let mut disk_index_by_letter: HashMap<String, usize> = HashMap::new();
+                for (idx, di) in disks.iter().enumerate() {
+                    if let Some(mp) = &di.mount_point {
+                        let mp_trim = mp.trim();
+                        if mp_trim.len() >= 2 {
+                            let letter = &mp_trim[..2]; // "C:"
+                            if letter.chars().nth(1) == Some(':')
+                                && letter.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                            {
+                                disk_index_by_letter.insert(letter.to_uppercase(), idx);
+                            }
+                        }
+                    }
+                }
+
+                // Now query drives and apply to matching letters
+                if let Ok(drives) = wmi_con.raw_query::<Win32DiskDrive>(
+                    "SELECT DeviceID, Model, Manufacturer, InterfaceType, MediaType FROM Win32_DiskDrive",
+                ) {
                     for d in drives {
-                        let vendor = d.Manufacturer.clone().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-                        let model = d.Model.clone().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                        let physical = d
+                            .DeviceID
+                            .clone()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        let vendor = d
+                            .Manufacturer
+                            .clone()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        let model = d
+                            .Model
+                            .clone()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
                         let disk_type = normalize_disk_type(
                             d.InterfaceType.as_deref(),
                             d.Model.as_deref(),
                             d.MediaType.as_deref(),
                         );
-                        if let Some(di) = disks.get_mut(i) {
-                            if di.vendor.is_none() { di.vendor = vendor.clone(); }
-                            if di.model.is_none() { di.model = model.clone(); }
-                            if di.disk_type.is_none() { di.disk_type = disk_type.clone(); }
+
+                        let Some(physical) = physical else { continue; };
+                        let partitions = physical_to_partitions.get(&physical).cloned().unwrap_or_default();
+                        let mut letters: Vec<String> = partitions
+                            .into_iter()
+                            .filter_map(|p| partition_to_letter.get(&p).cloned())
+                            .collect();
+                        letters.sort();
+                        letters.dedup();
+
+                        for letter in letters {
+                            if let Some(&idx) = disk_index_by_letter.get(&letter.to_uppercase()) {
+                                if let Some(di) = disks.get_mut(idx) {
+                                    if di.vendor.is_none() { di.vendor = vendor.clone(); }
+                                    if di.model.is_none() { di.model = model.clone(); }
+                                    if di.disk_type.is_none() { di.disk_type = disk_type.clone(); }
+                                }
+                            }
                         }
-                        i += 1;
                     }
                 }
             }
