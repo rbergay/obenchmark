@@ -260,7 +260,7 @@ pub fn get_detailed_system_info() -> SystemInfo {
 
             fn extract_quoted_value(s: &str, key: &str) -> Option<String> {
                 // Extract value from ... key="VALUE" ...
-                let needle = format!(r#"{key}=""#);
+                let needle = format!(r#"{}=""#, key);
                 let start = s.find(&needle)? + needle.len();
                 let rest = &s[start..];
                 let end = rest.find('"')?;
