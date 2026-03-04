@@ -11,6 +11,12 @@ pub struct BenchScore {
 pub struct BenchResult {
     pub scores: Vec<BenchScore>,
     pub final_score: u64,
+    #[serde(default)]
+    pub cpu_score: u64,
+    #[serde(default)]
+    pub mem_score: u64,
+    #[serde(default)]
+    pub disk_score: u64,
     pub system_info: Option<SystemInfo>,
 }
 

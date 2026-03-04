@@ -196,7 +196,13 @@ impl Application for OBenchmarkApp {
             }
 
             AppState::Showing(result) => {
-                let mut rows = column![text(format!("Score final : {}", result.final_score)).size(24)];
+                let mut rows = column![
+                    text(format!("Score global : {}", result.final_score)).size(24),
+                    text(format!("Score CPU : {}", result.cpu_score)).size(20),
+                    text(format!("Score RAM : {}", result.mem_score)).size(20),
+                    text(format!("Score Disque : {}", result.disk_score)).size(20),
+                    horizontal_rule(1),
+                ];
 
                 for s in &result.scores {
                     rows = rows.push(
