@@ -32,6 +32,8 @@ pub struct CpuInfo {
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct RamInfo {
     pub total_mb: u64,
+    #[serde(default)]
+    pub ram_type: Option<String>,
     pub modules: Vec<MemoryModule>,
     pub total_readable: Option<String>,
 }
@@ -41,6 +43,8 @@ pub struct MemoryModule {
     pub vendor: Option<String>,
     pub part_number: Option<String>,
     pub size_mb: Option<u64>,
+    #[serde(default)]
+    pub memory_type: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -48,6 +52,8 @@ pub struct DiskInfo {
     pub name: String,
     pub vendor: Option<String>,
     pub model: Option<String>,
+    #[serde(default)]
+    pub disk_type: Option<String>, // "HDD" | "SSD" | "NVMe" | "Unknown"
     pub mount_point: Option<String>,
     pub total_bytes: Option<u64>,
     pub size_readable: Option<String>,

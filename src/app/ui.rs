@@ -228,11 +228,24 @@ impl Application for OBenchmarkApp {
                         } else {
                             format!("{} MB", si.ram.total_mb)
                         };
-                        rows = rows.push(text(format!("RAM Total: {}", ram_display)));
+                        rows = rows
+                            .push(text(format!("RAM Total: {}", ram_display)))
+                            .push(text(format!(
+                                "RAM Type: {}",
+                                si.ram.ram_type.clone().unwrap_or("unknown".to_string())
+                            )));
 
                         for d in &si.disks {
                             let size_display = if let Some(b) = d.total_bytes { human_bytes(b as f64) } else { "unknown".to_string() };
-                            rows = rows.push(text(format!("Disk: {} {} {} (size: {}) mount: {:?}", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, size_display, d.mount_point)));
+                            rows = rows.push(text(format!(
+                                "Disk: {} {} {} [{}] (size: {}) mount: {:?}",
+                                d.vendor.clone().unwrap_or("".to_string()),
+                                d.model.clone().unwrap_or("".to_string()),
+                                d.name,
+                                d.disk_type.clone().unwrap_or("unknown".to_string()),
+                                size_display,
+                                d.mount_point
+                            )));
                         }
                 } else {
                     let sys = get_system_info();
