@@ -70,12 +70,50 @@ pub fn get_detailed_system_info() -> SystemInfo {
     }
 
     // ---------------------------------------------------------
-    // Linux: RAM modules via dmidecode
+    // Linux: CPU & RAM modules (dmidecode)
     // ---------------------------------------------------------
     #[cfg(target_os = "linux")]
     {
+        use std::fs;
         use std::process::Command;
 
+        // Fallback CPU info via /proc/cpuinfo si sysinfo est incomplet.
+        if sysinfo.cpu.vendor.is_none()
+            || sysinfo.cpu.model.is_none()
+            || sysinfo.cpu.frequency_mhz.is_none()
+        {
+            if let Ok(contents) = fs::read_to_string("/proc/cpuinfo") {
+                for line in contents.lines() {
+                    let line = line.trim();
+
+                    if sysinfo.cpu.vendor.is_none() && line.starts_with("vendor_id") {
+                        if let Some(v) = line.split(':').nth(1) {
+                            let v = v.trim();
+                            if !v.is_empty() {
+                                sysinfo.cpu.vendor = Some(v.to_string());
+                            }
+                        }
+                    } else if sysinfo.cpu.model.is_none() && line.starts_with("model name") {
+                        if let Some(v) = line.split(':').nth(1) {
+                            let v = v.trim();
+                            if !v.is_empty() {
+                                sysinfo.cpu.model = Some(v.to_string());
+                            }
+                        }
+                    } else if sysinfo.cpu.frequency_mhz.is_none() && line.starts_with("cpu MHz") {
+                        if let Some(v) = line.split(':').nth(1) {
+                            if let Ok(f) = v.trim().parse::<f64>() {
+                                if f > 0.0 {
+                                    sysinfo.cpu.frequency_mhz = Some(f as u64);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // RAM modules via dmidecode (si présent et autorisé).
         if let Ok(out) = Command::new("dmidecode").arg("-t").arg("17").output() {
             if out.status.success() {
                 if let Ok(txt) = String::from_utf8(out.stdout) {
@@ -122,7 +160,10 @@ pub fn get_detailed_system_info() -> SystemInfo {
                         }
                     }
 
-                    sysinfo.ram.ram_type = hist.into_iter().max_by_key(|(_, c)| *c).map(|(t, _)| t);
+                    sysinfo.ram.ram_type = hist
+                        .into_iter()
+                        .max_by_key(|(_, c)| *c)
+                        .map(|(t, _)| t);
                 }
             }
         }
@@ -422,13 +463,38 @@ pub fn get_detailed_system_info() -> SystemInfo {
 }
 
     // ---------------------------------------------------------
-    // Linux: enrichissement via /sys/block
+    // Linux: enrichissement via /sys/block (vendor / model / type HDD/SSD + bus)
     // ---------------------------------------------------------
     #[cfg(target_os = "linux")]
     {
         use std::fs;
 
-        let mut map = HashMap::<String, (Option<String>, Option<String>, Option<String>)>::new();
+        #[derive(Clone)]
+        struct LinuxDiskExtra {
+            vendor: Option<String>,
+            model: Option<String>,
+            base_type: Option<String>, // "HDD" | "SSD"
+            bus: Option<String>,       // "IDE" | "SATA" | "SAS" | "NVMe" | ...
+        }
+
+        fn classify_bus(protocol: Option<&str>, name: &str) -> Option<String> {
+            let pname = protocol.unwrap_or("").to_lowercase();
+            if name.starts_with("nvme") {
+                return Some("NVMe".to_string());
+            }
+            if pname.contains("sas") {
+                return Some("SAS".to_string());
+            }
+            if pname.contains("sata") || pname.contains("ata") {
+                return Some("SATA".to_string());
+            }
+            if name.starts_with("hd") {
+                return Some("IDE".to_string());
+            }
+            None
+        }
+
+        let mut map = HashMap::<String, LinuxDiskExtra>::new();
 
         if let Ok(entries) = fs::read_dir("/sys/block") {
             for e in entries.flatten() {
@@ -446,22 +512,68 @@ pub fn get_detailed_system_info() -> SystemInfo {
                     .ok()
                     .map(|s| s.trim().to_string());
 
-                let dtype = match rotational.as_deref() {
+                let protocol = fs::read_to_string(e.path().join("device/protocol"))
+                    .or_else(|_| fs::read_to_string(e.path().join("device/transport")))
+                    .ok()
+                    .map(|s| s.trim().to_string());
+
+                let base_type = match rotational.as_deref() {
                     Some("0") => Some("SSD".into()),
                     Some("1") => Some("HDD".into()),
                     _ => None,
                 };
 
-                map.insert(name, (vendor, model, dtype));
+                let bus = classify_bus(protocol.as_deref(), &name);
+
+                map.insert(
+                    name,
+                    LinuxDiskExtra {
+                        vendor,
+                        model,
+                        base_type,
+                        bus,
+                    },
+                );
             }
         }
 
         for disk in disks.iter_mut() {
-            let key = disk.name.replace(|c: char| c.is_ascii_digit(), "");
-            if let Some((v, m, t)) = map.get(&key) {
-                disk.vendor = v.clone().or(disk.vendor.take());
-                disk.model = m.clone().or(disk.model.take());
-                disk.disk_type = t.clone().or(disk.disk_type.take());
+            // Exemple de name() sous Linux: "/dev/sda", "/dev/sda1", "/dev/nvme0n1p1"
+            let raw_name = disk.name.clone();
+            let dev_name = raw_name
+                .split(|c| c == '/' || c == '\\')
+                .filter(|s| !s.is_empty())
+                .last()
+                .unwrap_or(&raw_name)
+                .to_string();
+
+            // Pour les disques classiques: "sda1" -> "sda"
+            // Pour NVMe: "nvme0n1p1" -> "nvme0n1"
+            let block_name = if dev_name.starts_with("nvme") {
+                if let Some(p_pos) = dev_name.rfind('p') {
+                    dev_name[..p_pos].to_string()
+                } else {
+                    dev_name
+                }
+            } else {
+                dev_name
+                    .trim_end_matches(|c: char| c.is_ascii_digit())
+                    .to_string()
+            };
+
+            if let Some(extra) = map.get(&block_name) {
+                disk.vendor = extra.vendor.clone().or(disk.vendor.take());
+                disk.model = extra.model.clone().or(disk.model.take());
+
+                if disk.disk_type.is_none() {
+                    if let Some(bt) = &extra.base_type {
+                        if let Some(bus) = &extra.bus {
+                            disk.disk_type = Some(format!("{} ({})", bt, bus));
+                        } else {
+                            disk.disk_type = Some(bt.clone());
+                        }
+                    }
+                }
             }
         }
     }
