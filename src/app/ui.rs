@@ -37,6 +37,34 @@ pub enum Msg {
     Restart,
 }
 
+fn unit_for_bench(name: &str) -> &'static str {
+    match name {
+        // CPU
+        "CPU Multi-Core"
+        | "CPU Int Math"
+        | "CPU Float Math"
+        | "CPU Prime Calc"
+        | "CPU SSE Ext"
+        | "CPU Physics"
+        | "CPU Sorting"
+        | "CPU UCT Single" => "ops/s",
+
+        "CPU Compression" | "CPU Encryption" => "MB/s",
+
+        // Mémoire
+        "Mem DB Ops" => "ops/s",
+        "Mem Cached Read" | "Mem Uncached Read" | "Mem Write" | "Mem Threaded" => "MB/s",
+        "Mem Available" => "MB",
+        "Mem Latency" => "accès/s",
+
+        // Disque
+        "Disk Seq Read" | "Disk Seq Write" => "MB/s",
+        "Disk IOPS 32K QD20" | "Disk IOPS 4K QD1" => "IOPS",
+
+        _ => "",
+    }
+}
+
 impl Application for OBenchmarkApp {
     type Executor = iced::executor::Default;
     type Flags = ();
@@ -208,7 +236,7 @@ impl Application for OBenchmarkApp {
                     rows = rows.push(
                         row![
                             text(&s.name).width(Length::FillPortion(2)),
-                            text(format!("{}", s.raw_score))
+                            text(format!("{} {}", s.raw_score, unit_for_bench(&s.name)))
                                 .width(Length::FillPortion(1))
                                 .horizontal_alignment(Horizontal::Right),
                         ]

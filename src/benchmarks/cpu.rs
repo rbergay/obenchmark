@@ -30,9 +30,9 @@ impl Benchmark for CpuMultiCore {
         let mut iterations: u64 = 0;
 
         while start.elapsed() < CPU_BENCH_DURATION {
-            let batch: u64 = (0u64..1_000_000)
+            (0u64..1_000_000)
                 .into_par_iter()
-                .map(|i| {
+                .for_each(|i| {
                     // Mélange entier relativement coûteux et difficile à optimiser.
                     let v = i
                         .wrapping_mul(6364136223846793005)
@@ -40,10 +40,8 @@ impl Benchmark for CpuMultiCore {
                         .rotate_left(17)
                         ^ 0x9E37_79B9_7F4A_7C15;
                     black_box(v);
-                    1u64
-                })
-                .sum();
-            iterations += batch;
+                });
+            iterations += 1_000_000;
         }
         let elapsed = start.elapsed().as_secs_f64().max(MIN_ELAPSED_SEC);
         Ok((iterations as f64 / elapsed) as u64)
@@ -164,7 +162,10 @@ impl Benchmark for CpuSSE {
             }
             count += 1;
         }
-        let checksum: f32 = a.iter().copied().sum();
+        let mut checksum: f32 = 0.0;
+        for v in &a {
+            checksum += *v;
+        }
         black_box(checksum);
 
         let elapsed = start.elapsed().as_secs_f64().max(MIN_ELAPSED_SEC);
@@ -256,7 +257,10 @@ impl Benchmark for CpuPhysics {
             }
             count += 1;
         }
-        let energy: f64 = pos.iter().map(|p| p * p).sum();
+        let mut energy: f64 = 0.0;
+        for p in &pos {
+            energy += *p * *p;
+        }
         black_box(energy);
 
         let elapsed = start.elapsed().as_secs_f64().max(MIN_ELAPSED_SEC);
@@ -282,7 +286,7 @@ impl Benchmark for CpuSorting {
 
         while start.elapsed() < CPU_BENCH_DURATION {
             let mut v: Vec<u64> = (0..1_000_000).map(|_| rng.gen()).collect();
-            v.sort_unstable();
+            v.sort();
             black_box(&v[0..std::cmp::min(16, v.len())]);
             total_items += v.len() as u64;
         }
