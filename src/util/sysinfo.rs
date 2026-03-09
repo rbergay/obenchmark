@@ -348,23 +348,60 @@ pub fn get_detailed_system_info() -> SystemInfo {
         extract_quoted_value(ref_str, "DeviceID")
     }
 
-    fn normalize_disk_type(interface_type: Option<&str>, model: Option<&str>, media_type: Option<&str>) -> Option<String> {
-        let iface = interface_type.unwrap_or("").to_lowercase();
-        let m = model.unwrap_or("").to_lowercase();
-        let media = media_type.unwrap_or("").to_lowercase();
+    fn normalize_disk_type(
+    interface: Option<&str>,
+    model: Option<&str>,
+    media: Option<&str>
+) -> Option<String> {
 
-        if iface.contains("nvme") || m.contains("nvme") {
-            return Some("NVMe".to_string());
-        }
-        if media.contains("ssd") {
-            return Some("SSD".to_string());
-        }
-        if media.contains("hdd") || media.contains("fixed") {
-            // "Fixed hard disk media" (ancien Windows) => HDD par défaut
-            return Some("HDD".to_string());
-        }
-        None
+    let iface = interface.unwrap_or("").to_lowercase();
+    let model = model.unwrap_or("").to_lowercase();
+    let media = media.unwrap_or("").to_lowercase();
+
+    // 1. NVMe — détecté via modèle (le plus fiable)
+    if model.contains("nvme") {
+        return Some("NVMe".into());
     }
+
+    // 2. SSD — via media ou modèle
+    if media.contains("ssd") || model.contains("ssd") {
+        // Bus SATA ?
+        if iface.contains("sata") {
+            return Some("SSD (SATA)".into());
+        }
+        return Some("SSD".into());
+    }
+
+    // 3. HDD — via media ou modèle
+    if media.contains("hdd") || media.contains("fixed") || model.contains("hdd") {
+        if iface.contains("sata") {
+            return Some("HDD (SATA)".into());
+        }
+        if iface.contains("ide") {
+            return Some("HDD (IDE)".into());
+        }
+        if iface.contains("sas") {
+            return Some("HDD (SAS)".into());
+        }
+        return Some("HDD".into());
+    }
+
+    // 4. Bus fallback
+    if iface.contains("sata") {
+        return Some("SATA".into());
+    }
+    if iface.contains("ide") {
+        return Some("IDE".into());
+    }
+    if iface.contains("sas") {
+        return Some("SAS".into());
+    }
+    if iface.contains("scsi") {
+        return Some("SCSI".into());
+    }
+
+    None
+}
 
     if let Ok(wmi_con) = WMIConnection::new() {
         // 1) Partition -> Letter mapping (ex: "Disk #0, Partition #1" -> "C:")
