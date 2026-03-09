@@ -37,6 +37,34 @@ pub enum Msg {
     Restart,
 }
 
+fn unit_for_bench(name: &str) -> &'static str {
+    match name {
+        // CPU
+        "CPU Multi-Core"
+        | "CPU Int Math"
+        | "CPU Float Math"
+        | "CPU Prime Calc"
+        | "CPU SSE Ext"
+        | "CPU Physics"
+        | "CPU Sorting"
+        | "CPU UCT Single" => "ops/s",
+
+        "CPU Compression" | "CPU Encryption" => "MB/s",
+
+        // Mémoire
+        "Mem DB Ops" => "ops/s",
+        "Mem Cached Read" | "Mem Uncached Read" | "Mem Write" | "Mem Threaded" => "MB/s",
+        "Mem Available" => "MB",
+        "Mem Latency" => "accès/s",
+
+        // Disque
+        "Disk Seq Read" | "Disk Seq Write" => "MB/s",
+        "Disk IOPS 32K QD20" | "Disk IOPS 4K QD1" => "IOPS",
+
+        _ => "",
+    }
+}
+
 impl Application for OBenchmarkApp {
     type Executor = iced::executor::Default;
     type Flags = ();
@@ -196,13 +224,19 @@ impl Application for OBenchmarkApp {
             }
 
             AppState::Showing(result) => {
-                let mut rows = column![text(format!("Score final : {}", result.final_score)).size(24)];
+                let mut rows = column![
+                    text(format!("Score global : {}", result.final_score)).size(24),
+                    text(format!("Score CPU : {}", result.cpu_score)).size(20),
+                    text(format!("Score RAM : {}", result.mem_score)).size(20),
+                    text(format!("Score Disque : {}", result.disk_score)).size(20),
+                    horizontal_rule(1),
+                ];
 
                 for s in &result.scores {
                     rows = rows.push(
                         row![
                             text(&s.name).width(Length::FillPortion(2)),
-                            text(format!("{}", s.raw_score))
+                            text(format!("{} {}", s.raw_score, unit_for_bench(&s.name)))
                                 .width(Length::FillPortion(1))
                                 .horizontal_alignment(Horizontal::Right),
                         ]
@@ -222,11 +256,24 @@ impl Application for OBenchmarkApp {
                         } else {
                             format!("{} MB", si.ram.total_mb)
                         };
-                        rows = rows.push(text(format!("RAM Total: {}", ram_display)));
+                        rows = rows
+                            .push(text(format!("RAM Total: {}", ram_display)))
+                            .push(text(format!(
+                                "RAM Type: {}",
+                                si.ram.ram_type.clone().unwrap_or("unknown".to_string())
+                            )));
 
                         for d in &si.disks {
                             let size_display = if let Some(b) = d.total_bytes { human_bytes(b as f64) } else { "unknown".to_string() };
-                            rows = rows.push(text(format!("Disk: {} {} {} (size: {}) mount: {:?}", d.vendor.clone().unwrap_or("".to_string()), d.model.clone().unwrap_or("".to_string()), d.name, size_display, d.mount_point)));
+                            rows = rows.push(text(format!(
+                                "Disk: {} {} {} [{}] (size: {}) mount: {:?}",
+                                d.vendor.clone().unwrap_or("".to_string()),
+                                d.model.clone().unwrap_or("".to_string()),
+                                d.name,
+                                d.disk_type.clone().unwrap_or("unknown".to_string()),
+                                size_display,
+                                d.mount_point
+                            )));
                         }
                 } else {
                     let sys = get_system_info();

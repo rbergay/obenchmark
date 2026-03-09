@@ -1,7 +1,7 @@
 use crossbeam_channel::Sender;
 use crate::engines::benchmark::Benchmark;
 use crate::model::result::{BenchResult, BenchScore};
-use crate::engines::score::compute_final_score;
+use crate::engines::score::compute_aggregated_scores;
 use crate::util::sysinfo::get_detailed_system_info;
 
 pub enum RunnerEvent {
@@ -40,12 +40,15 @@ pub fn run_benchmarks(
             }
         }
 
-        let final_score = compute_final_score(&scores);
+        let aggregated = compute_aggregated_scores(&scores);
         let system_info = get_detailed_system_info();
 
         tx.send(RunnerEvent::Done(BenchResult {
             scores,
-            final_score,
+            final_score: aggregated.global,
+            cpu_score: aggregated.cpu,
+            mem_score: aggregated.mem,
+            disk_score: aggregated.disk,
             system_info: Some(system_info),
         }))
         .ok();
