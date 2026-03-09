@@ -2,25 +2,33 @@ use chrono::Local;
 use crossbeam_channel::{unbounded, Receiver};
 use iced::alignment::Horizontal;
 use iced::time;
-use iced::widget::{button, column, row, scrollable, text, horizontal_rule, progress_bar};
+use iced::widget::{
+    button, column, row, scrollable, text, horizontal_rule, progress_bar,
+};
 use iced::{Application, Command, Element, Length, Subscription, Theme};
 
 use std::time::Duration;
 
+// Rapport matériel
+use crate::app::hw_check::{evaluate_hw, HwCheckResult};
+
+// App logic
 use crate::{
     engines::runner::{run_benchmarks, RunnerEvent},
     benchmarks::{
         cpu::{
-            CpuMultiCore, CpuIntMath, CpuFloatMath, CpuPrimeCalc, CpuSSE, CpuCompression,
-            CpuEncryption, CpuPhysics, CpuSorting, CpuUCT,
+            CpuMultiCore, CpuIntMath, CpuFloatMath, CpuPrimeCalc, CpuSSE,
+            CpuCompression, CpuEncryption, CpuPhysics, CpuSorting, CpuUCT,
         },
         memory::{
-            MemoryDBOps, MemoryCachedRead, MemoryUncachedRead, MemoryWrite, MemoryAvailable,
-            MemoryLatency, MemoryThreaded,
+            MemoryDBOps, MemoryCachedRead, MemoryUncachedRead, MemoryWrite,
+            MemoryAvailable, MemoryLatency, MemoryThreaded,
         },
-        disk::{DiskSequentialRead, DiskSequentialWrite, DiskRandomIOPS32K, DiskRandomIOPS4K},
+        disk::{
+            DiskSequentialRead, DiskSequentialWrite, DiskRandomIOPS32K,
+            DiskRandomIOPS4K,
+        },
     },
-    util::sysinfo::get_system_info,
     app::state::AppState,
 };
 
@@ -37,6 +45,9 @@ pub enum Msg {
     Restart,
 }
 
+/*--------------------------------------------------------------
+                    UNITÉS DE MESURE PAR BENCH
+--------------------------------------------------------------*/
 fn unit_for_bench(name: &str) -> &'static str {
     match name {
         // CPU
@@ -51,13 +62,17 @@ fn unit_for_bench(name: &str) -> &'static str {
 
         "CPU Compression" | "CPU Encryption" => "MB/s",
 
-        // Mémoire
+        // RAM
         "Mem DB Ops" => "ops/s",
-        "Mem Cached Read" | "Mem Uncached Read" | "Mem Write" | "Mem Threaded" => "MB/s",
+        "Mem Cached Read"
+        | "Mem Uncached Read"
+        | "Mem Write"
+        | "Mem Threaded" => "MB/s",
+
         "Mem Available" => "MB",
         "Mem Latency" => "accès/s",
 
-        // Disque
+        // DISK
         "Disk Seq Read" | "Disk Seq Write" => "MB/s",
         "Disk IOPS 32K QD20" | "Disk IOPS 4K QD1" => "IOPS",
 
@@ -65,13 +80,52 @@ fn unit_for_bench(name: &str) -> &'static str {
     }
 }
 
+/*--------------------------------------------------------------
+                    WIDGET : RAPPORT MATÉRIEL
+--------------------------------------------------------------*/
+use iced::{Color};
+
+pub fn hw_report_widget(hw: &HwCheckResult) -> Element<'static, Msg> {
+    fn color(ok: bool) -> Color {
+        if ok {
+            Color::from_rgb(0.0, 0.7, 0.0)
+        } else {
+            Color::from_rgb(0.9, 0.0, 0.0)
+        }
+    }
+
+    fn item(label: &str, ok: bool) -> Element<'static, Msg> {
+        row![
+            text(label).size(20),
+            text(if ok { "OK" } else { "Insuffisant" })
+                .style(iced::theme::Text::Color(color(ok)))
+                .size(20)
+        ]
+        .spacing(12)
+        .into()
+    }
+
+    column![
+        text("Analyse matériel PostgreSQL").size(26),
+        item("CPU :", hw.cpu_ok),
+        item("RAM :", hw.ram_ok),
+        item("Disques :", hw.disk_ok),
+        horizontal_rule(1)
+    ]
+    .spacing(8)
+    .into()
+}
+
+/*--------------------------------------------------------------
+                    APPLICATION ICED
+--------------------------------------------------------------*/
 impl Application for OBenchmarkApp {
     type Executor = iced::executor::Default;
     type Flags = ();
     type Message = Msg;
     type Theme = Theme;
 
-    fn new(_f: Self::Flags) -> (Self, Command<Self::Message>) {
+    fn new(_flags: Self::Flags) -> (Self, Command<Self::Message>) {
         (
             Self {
                 state: AppState::Idle,
@@ -121,6 +175,7 @@ impl Application for OBenchmarkApp {
                     Box::new(DiskRandomIOPS32K),
                     Box::new(DiskRandomIOPS4K),
                 ];
+
                 let total = benches.len();
 
                 self.state = AppState::Running {
@@ -151,7 +206,9 @@ impl Application for OBenchmarkApp {
                             }
 
                             RunnerEvent::BenchFinished(_, _) => {
-                                if let AppState::Running { current_test, completed, total } = &self.state {
+                                if let AppState::Running { current_test, completed, total } =
+                                    &self.state
+                                {
                                     self.state = AppState::Running {
                                         current_test: current_test.clone(),
                                         completed: completed + 1,
@@ -164,8 +221,8 @@ impl Application for OBenchmarkApp {
                                 self.state = AppState::Showing(result.clone());
                             }
 
-                            RunnerEvent::Error(e) => {
-                                self.state = AppState::Error(e);
+                            RunnerEvent::Error(err) => {
+                                self.state = AppState::Error(err);
                             }
                         }
                     }
@@ -175,7 +232,10 @@ impl Application for OBenchmarkApp {
             Msg::Export => {
                 if let AppState::Showing(result) = &self.state {
                     let json = serde_json::to_string_pretty(result).unwrap();
-                    let _ = std::fs::write(format!("bench_{}.json", Local::now().timestamp()), json);
+                    let _ = std::fs::write(
+                        format!("bench_{}.json", Local::now().timestamp()),
+                        json,
+                    );
                 }
             }
 
@@ -184,6 +244,7 @@ impl Application for OBenchmarkApp {
                 self.receiver = None;
             }
         }
+
         Command::none()
     }
 
@@ -202,21 +263,21 @@ impl Application for OBenchmarkApp {
             }
         }
 
-        let mut ui = column![text("OBenchmark").size(32), horizontal_rule(1),]
-            .spacing(12)
-            .padding(16);
+        let mut ui = column![text("OBenchmark").size(32), horizontal_rule(1)]
+            .padding(16)
+            .spacing(12);
 
         match &self.state {
             AppState::Idle => {
-                ui = ui.push(
-                    button("Start Benchmark")
-                        .on_press(Msg::Start)
-                        .width(Length::Fill)
-                );
+                ui = ui.push(button("Start Benchmark").on_press(Msg::Start));
             }
 
             AppState::Running { current_test, completed, total } => {
-                let global = if *total > 0 { *completed as f32 / *total as f32 } else { 0.0 };
+                let global = if *total > 0 {
+                    *completed as f32 / *total as f32
+                } else {
+                    0.0
+                };
 
                 ui = ui
                     .push(text(format!("Test en cours : {}", current_test)).size(20))
@@ -232,6 +293,13 @@ impl Application for OBenchmarkApp {
                     horizontal_rule(1),
                 ];
 
+                // Rapport matériel PostgreSQL
+                if let Some(sysinfo) = &result.system_info {
+                    let hw = evaluate_hw(sysinfo);
+                    rows = rows.push(hw_report_widget(&hw));
+                }
+
+                // Résultats par bench
                 for s in &result.scores {
                     rows = rows.push(
                         row![
@@ -244,48 +312,42 @@ impl Application for OBenchmarkApp {
                 }
 
                 rows = rows.push(horizontal_rule(1)).push(text("System info"));
+
                 if let Some(si) = &result.system_info {
-                        rows = rows
-                            .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
-                            .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
-                            .push(text(format!("Logical cores: {}", si.cpu.cores_logical)));
+                    rows = rows
+                        .push(text(format!("CPU Vendor: {}", si.cpu.vendor.clone().unwrap_or("unknown".to_string()))))
+                        .push(text(format!("CPU Model: {}", si.cpu.model.clone().unwrap_or("unknown".to_string()))))
+                        .push(text(format!("Logical cores: {}", si.cpu.cores_logical)));
 
-                        // RAM total: si.ram.total_mb is MB
-                        let ram_display = if si.ram.total_mb >= 1024 {
-                            format!("{:.2} GB", si.ram.total_mb as f64 / 1024.0)
+                    let ram_display = if si.ram.total_mb >= 1024 {
+                        format!("{:.2} GB", si.ram.total_mb as f64 / 1024.0)
+                    } else {
+                        format!("{} MB", si.ram.total_mb)
+                    };
+
+                    rows = rows
+                        .push(text(format!("RAM Total: {}", ram_display)))
+                        .push(text(format!("RAM Type: {}", si.ram.ram_type.clone().unwrap_or("unknown".to_string()))));
+
+                    for d in &si.disks {
+                        let size_display = if let Some(b) = d.total_bytes {
+                            human_bytes(b as f64)
                         } else {
-                            format!("{} MB", si.ram.total_mb)
+                            "unknown".to_string()
                         };
-                        rows = rows
-                            .push(text(format!("RAM Total: {}", ram_display)))
-                            .push(text(format!(
-                                "RAM Type: {}",
-                                si.ram.ram_type.clone().unwrap_or("unknown".to_string())
-                            )));
 
-                        for d in &si.disks {
-                            let size_display = if let Some(b) = d.total_bytes { human_bytes(b as f64) } else { "unknown".to_string() };
-                            rows = rows.push(text(format!(
-                                "Disk: {} {} {} [{}] (size: {}) mount: {:?}",
-                                d.vendor.clone().unwrap_or("".to_string()),
-                                d.model.clone().unwrap_or("".to_string()),
-                                d.name,
-                                d.disk_type.clone().unwrap_or("unknown".to_string()),
-                                size_display,
-                                d.mount_point
-                            )));
-                        }
-                } else {
-                    let sys = get_system_info();
-                        let ram_mb = sys.total_memory() / 1024;
-                        let ram_display = if ram_mb >= 1024 { format!("{:.2} GB", ram_mb as f64 / 1024.0) } else { format!("{} MB", ram_mb) };
-                        rows = rows
-                            .push(text(format!("CPU: {}", sys.global_cpu_info().brand())))
-                            .push(text(format!("Cores: {}", sys.cpus().len())))
-                            .push(text(format!("RAM: {}", ram_display)));
+                        rows = rows.push(text(format!(
+                            "Disk: {} {} {} [{}] (size: {}) mount: {:?}",
+                            d.vendor.clone().unwrap_or_default(),
+                            d.model.clone().unwrap_or_default(),
+                            d.name,
+                            d.disk_type.clone().unwrap_or("unknown".to_string()),
+                            size_display,
+                            d.mount_point
+                        )));
+                    }
                 }
 
-                // combine rows and buttons in one column and make it scrollable
                 ui = ui.push(
                     scrollable(
                         column![
@@ -294,14 +356,14 @@ impl Application for OBenchmarkApp {
                                 button("Export JSON").on_press(Msg::Export),
                                 button("Nouvelle analyse").on_press(Msg::Restart)
                             ]
-                            .spacing(10),
+                            .spacing(10)
                         ]
                     )
                 );
             }
 
-            AppState::Error(err) => {
-                ui = ui.push(text(format!("Erreur : {}", err)));
+            AppState::Error(e) => {
+                ui = ui.push(text(format!("Erreur : {}", e)));
             }
         }
 

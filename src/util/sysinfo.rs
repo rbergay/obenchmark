@@ -1,7 +1,6 @@
 use sysinfo::System;
 
-use crate::model::result::{SystemInfo, CpuInfo, DiskInfo, MemoryModule};
-use std::collections::HashMap;
+use crate::model::result::{SystemInfo, CpuInfo, DiskInfo};
 
 fn human_bytes(mut bytes: f64) -> String {
     let units = ["B", "KB", "MB", "GB", "TB"];

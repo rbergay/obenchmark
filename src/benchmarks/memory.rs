@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Instant;
 
 use anyhow::Result;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use rand::seq::SliceRandom;
 
 use crate::engines::benchmark::Benchmark;
