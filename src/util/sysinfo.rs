@@ -1,11 +1,3 @@
-// ============================================================================
-// sysinfo.rs – Version ultra-robuste, compatible Windows / Linux / macOS
-// - Windows: WMI + fallback PowerShell (Get-PhysicalDisk) SANS winapi
-// - Linux: /sys/block (vendor/model/rotational/bus)
-// - macOS: diskutil info -all
-// - sysinfo 0.30 (pas de SystemExt/DiskExt)
-// ============================================================================
-
 use sysinfo::{System, Disks};
 use std::collections::HashMap;
 
